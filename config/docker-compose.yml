@@ -1,0 +1,102 @@
+version: "3.8"
+
+services:
+    shelfsync-fe:
+        build: ../shelfsyncfe
+        restart: on-failure
+        volumes:
+            - ../shelfsyncfe/src:/app/src
+        environment:
+            - CI=true
+        ports:
+            - 3000:3000
+        depends_on:
+            - shelfsync-auth
+            - shelfsync-be
+        networks:
+            - fe-be-auth
+
+    shelfsync-be:
+        build: ../shelfsyncbe
+        restart: on-failure
+        volumes:
+            - ../shelfsyncbe/src/main/resources:/firebaseauth/resources
+        ports:
+            - 8083:8083
+        depends_on:
+            - shelfsync-db
+        networks:
+            - db-be-auth
+            - fe-be-auth
+
+    shelfsync-auth:
+        build: ../shelfsyncauth
+        restart: on-failure
+        volumes:
+            - ../shelfsyncauth/src/main/resources:/firebaseauth/resources
+        ports:
+            - 8082:8082
+        depends_on:
+            - shelfsync-db
+        networks:
+            - db-be-auth
+            - fe-be-auth
+
+    shelfsync-db:
+        build: ../shelfsyncdb
+        restart: on-failure
+        ports:
+            - 8081:8081
+        environment:
+            SPRING_APPLICATION_JSON: '{
+                "spring.datasource.url"  : "jdbc:postgresql://postgres-db:5432/books",
+                "spring.datasource.username" : "admin",
+                "spring.datasource.password" : "admin",
+                "spring.jpa.properties.hibernate.dialect" : "org.hibernate.dialect.PostgreSQLDialect",
+                "spring.jpa.hibernate.ddl-auto" : "update"
+            }'
+        depends_on:
+            postgres-db:
+                condition: service_healthy
+        networks:
+            - postgres-dbservice
+            - db-be-auth
+
+    postgres-db:
+        image: postgres:12
+        volumes:
+            - ../database/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+            - postgres-volume:/var/lib/postgresql/data
+        environment:
+            POSTGRES_DB: books
+            POSTGRES_USER: admin
+            POSTGRES_PASSWORD: admin
+        healthcheck:
+            test: [ "CMD-SHELL", "pg_isready -U admin -d books" ]
+            interval: 10s
+            retries: 5
+            start_period: 10s
+        networks:
+            - postgres-adminer
+            - postgres-dbservice
+            
+    adminer:
+        image: adminer
+        environment:
+            ADMINER_DEFAULT_SERVER: postgres-db  
+        ports:
+            - 8080:8080
+        depends_on:
+            postgres-db:
+                condition: service_healthy
+        networks:
+            - postgres-adminer
+
+volumes:
+    postgres-volume:
+
+networks:
+    postgres-adminer:
+    postgres-dbservice:
+    db-be-auth:
+    fe-be-auth:
